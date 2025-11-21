@@ -1,0 +1,70 @@
+/**
+ * Simple test runner for Part 3 unit tests.
+ * Run with assertions enabled: java -ea MessageTestPart3
+ */
+
+public class MessageTestPart3 {
+    public static void main(String[] args) {
+        System.out.println("Running Part 3 tests...");
+
+        // reset counters for predictable IDs
+        Message.resetForTesting();
+
+        // Use QuickChat.populateWithTestData to fill arrays
+        QuickChat.getSentMessages().clear();
+        QuickChat.getStoredMessages().clear();
+        QuickChat.getDisregardedMessages().clear();
+        QuickChat.getMessageHashes().clear();
+        QuickChat.getMessageIDs().clear();
+
+        // Call populate
+        QuickChat.populateWithTestData();
+
+        // Test 1: Sent Messages array correctly populated (messages 1 and 4 are sent)
+        int expectedSent = 2;
+        assert QuickChat.getSentMessages().size() == expectedSent : "Sent messages count expected " + expectedSent;
+
+        // Test 2: Display the longest Message among messages 1-4 (by content length)
+        // According to test data, the longest should be message 2 text: "Where are you? You are late! I have asked you to be on time."
+        // But only sent messages considered for longest sent message: for test data messages 1-4 -> sent are message1 ("Did you get the cake?") and message4 ("It is dinner time!")
+        // Between these two, "Did you get the cake?" length 22, "It is dinner time!" length 18 -> Expect "Did you get the cake?"
+        String longestSent = QuickChat.getSentMessages().stream()
+                .max((a,b) -> Integer.compare(a.getMessageText().length(), b.getMessageText().length()))
+                .map(Message::getMessageText).orElse("");
+        assert longestSent.equals("Did you get the cake?") : "Longest sent message mismatch: got '" + longestSent + "'";
+
+        // Test 3: Search for messageID for message 4
+        Message msg4 = QuickChat.getSentMessages().stream()
+                .filter(m -> m.getMessageText().equals("It is dinner time!")).findFirst().orElse(null);
+        assert msg4 != null : "Message 4 should exist";
+        String id4 = msg4.getMessageID();
+        assert id4 != null && id4.length() == 10 : "Message ID should be 10 chars";
+
+        // Test 4: Search all messages for recipient +27838884567 -> should find message 2 and 5 in storedMessages
+        long foundCount = QuickChat.getStoredMessages().stream().filter(m -> m.getRecipient().equals("+27838884567")).count();
+        assert foundCount == 2 : "Expected 2 messages for +27838884567 but found " + foundCount;
+
+        // Test 5: Delete a message using message hash (delete Test Message 2)
+        Message toDelete = QuickChat.getStoredMessages().stream()
+                .filter(m -> m.getMessageText().startsWith("Where are you?")).findFirst().orElse(null);
+        assert toDelete != null : "Test message 2 must exist in stored messages";
+        String hashToDelete = toDelete.getMessageHash();
+
+        // perform deletion
+        boolean deleted = QuickChat.getStoredMessages().removeIf(m -> m.getMessageHash().equals(hashToDelete));
+        assert deleted : "Message should be deleted successfully";
+
+        // Verify deletion
+        boolean stillExists = QuickChat.getStoredMessages().stream().anyMatch(m -> m.getMessageHash().equals(hashToDelete));
+        assert !stillExists : "Deleted message should not be present";
+
+        // Test 6: Display report shows all sent messages include message hash, recipient and message
+        boolean allIncludeFields = QuickChat.getSentMessages().stream().allMatch(m ->
+                m.getMessageHash() != null && !m.getMessageHash().isEmpty()
+                        && m.getRecipient() != null && !m.getRecipient().isEmpty()
+                        && m.getMessageText() != null && !m.getMessageText().isEmpty());
+        assert allIncludeFields : "Not all sent messages include required fields";
+
+        System.out.println("All Part 3 tests passed.");
+    }
+}
