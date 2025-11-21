@@ -1,0 +1,209 @@
+import javax.swing.*;
+import java.io.*;
+import java.util.*;
+import java.util.regex.Pattern;
+
+/**
+ * Message class updated for Part 3.
+ */
+public class Message {
+    private String messageID;          // 10-digit string
+    private int numSent;               // incremental number (starts at 0)
+    private String recipient;          // cell number with international code
+    private String messageText;        // message body
+    private String messageHash;        // auto-generated
+    private static int globalCounter = 0; // used to generate message numbers
+    private static final Random rnd = new Random();
+
+    public Message(String recipient, String messageText) {
+        this.numSent = globalCounter++;
+        this.messageID = generateTenDigitID(this.numSent);
+        this.recipient = recipient;
+        this.messageText = messageText;
+        this.messageHash = createMessageHash();
+    }
+
+    // For tests or explicit ID
+    public Message(String messageID, String recipient, String messageText, int numSent) {
+        this.numSent = numSent;
+        this.messageID = messageID;
+        this.recipient = recipient;
+        this.messageText = messageText;
+        this.messageHash = createMessageHash();
+        // ensure global counter is at least numSent+1
+        globalCounter = Math.max(globalCounter, numSent + 1);
+    }
+
+    private String generateTenDigitID(int num) {
+        int firstTwo = num % 100;
+        String prefix = String.format("%02d", firstTwo);
+        StringBuilder sb = new StringBuilder(prefix);
+        for (int i = 0; i < 8; i++) sb.append(rnd.nextInt(10));
+        return sb.toString();
+    }
+
+    public boolean checkMessageID() {
+        return messageID != null && messageID.length() == 10;
+    }
+
+    public boolean checkRecipientCell() {
+        if (recipient == null) return false;
+        // allow international numbers like +27834557896 (length approx 12) - use regex: + followed by 9-13 digits
+        return Pattern.matches("^\\+\\d{9,13}$", recipient);
+    }
+
+    public String createMessageHash() {
+        String firstTwo = (messageID != null && messageID.length() >= 2) ? messageID.substring(0, 2) : "00";
+        String msg = messageText == null ? "" : messageText.trim();
+        if (msg.isEmpty()) {
+            return String.format("%s:%d:", firstTwo, numSent).toUpperCase();
+        }
+        String[] words = msg.split("\\s+");
+        String firstWord = cleanAlphaNumeric(words[0]);
+        String lastWord = cleanAlphaNumeric(words[words.length - 1]);
+        String combined = (firstWord + lastWord).toUpperCase();
+        return String.format("%s:%d:%s", firstTwo, numSent, combined);
+    }
+
+    private String cleanAlphaNumeric(String s) {
+        if (s == null) return "";
+        return s.replaceAll("[^A-Za-z0-9]", "");
+    }
+
+    public String SentMessage() {
+        String[] options = {"Send Message", "Disregard Message", "Store Message (send later)", "Save to JSON file"};
+        int choice = JOptionPane.showOptionDialog(null,
+                "Choose an action for this message:",
+                "Send Message Options",
+                JOptionPane.DEFAULT_OPTION,
+                JOptionPane.QUESTION_MESSAGE,
+                null,
+                options,
+                options[0]);
+
+        switch (choice) {
+            case 0:
+                return "SEND";
+            case 1:
+                return "DISCARD";
+            case 2:
+                return "STORE";
+            case 3:
+                return "JSON";
+            default:
+                return "DISCARD";
+        }
+    }
+
+    public String printMessages() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Message ID: ").append(messageID).append("\n");
+        sb.append("Message Hash: ").append(messageHash).append("\n");
+        sb.append("Recipient: ").append(recipient).append("\n");
+        sb.append("Message: ").append(messageText).append("\n");
+        return sb.toString();
+    }
+
+    public static int returnTotalMessagess() {
+        return globalCounter;
+    }
+
+    public boolean storeMessageToJsonFile(String filepath) {
+        Map<String, String> obj = new LinkedHashMap<>();
+        obj.put("messageID", messageID);
+        obj.put("messageHash", messageHash);
+        obj.put("recipient", recipient);
+        obj.put("message", messageText);
+
+        try (FileWriter fw = new FileWriter(filepath, true)) {
+            String json = toJsonString(obj);
+            fw.write(json + System.lineSeparator());
+            fw.flush();
+            return true;
+        } catch (IOException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    private String toJsonString(Map<String, String> map) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("{");
+        boolean first = true;
+        for (Map.Entry<String, String> e : map.entrySet()) {
+            if (!first) sb.append(",");
+            sb.append("\"").append(escape(e.getKey())).append("\":");
+            sb.append("\"").append(escape(e.getValue())).append("\"");
+            first = false;
+        }
+        sb.append("}");
+        return sb.toString();
+    }
+
+    private String escape(String s) {
+        if (s == null) return "";
+        return s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n");
+    }
+
+    // Parse a single-line JSON object produced by storeMessageToJsonFile
+    // Returns a Message if parsing successful, else null
+    public static Message fromJsonLine(String jsonLine) {
+        if (jsonLine == null) return null;
+        try {
+            // Very simple parser: find values between "key":"value"
+            Map<String, String> map = new HashMap<>();
+            String[] parts = jsonLine.trim().replaceAll("^\\{", "").replaceAll("}$", "").split("\",\"");
+            for (String p : parts) {
+                String pair = p.replaceAll("^\"", "").replaceAll("\"$", "");
+                int idx = pair.indexOf("\":\"");
+                if (idx == -1) continue;
+                String key = pair.substring(0, idx);
+                String val = pair.substring(idx + 3);
+                // unescape basic sequences
+                val = val.replace("\\n", "\n").replace("\\\"", "\"").replace("\\\\", "\\");
+                map.put(key, val);
+            }
+            String id = map.get("messageID");
+            String recipient = map.get("recipient");
+            String message = map.get("message");
+            // numSent unknown here; use current globalCounter as index
+            Message m = new Message(recipient, message);
+            if (id != null && id.length() == 10) {
+                // override generated ID keeping other properties
+                m.messageID = id;
+                m.messageHash = m.createMessageHash();
+            }
+            return m;
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            return null;
+        }
+    }
+
+    public String getMessageID() { return messageID; }
+    public int getNumSent() { return numSent; }
+    public String getRecipient() { return recipient; }
+    public String getMessageText() { return messageText; }
+    public String getMessageHash() { return messageHash; }
+
+    public static String validateMessageLength(String m) {
+        if (m == null) m = "";
+        int limit = 250;
+        if (m.length() <= limit) return null;
+        int over = m.length() - limit;
+        return String.format("Message exceeds 250 characters by %d, please reduce size.", over);
+    }
+
+    public static String validateRecipientFormat(String r) {
+        if (r == null) return "Cell phone number is incorrectly formatted or does not contain an international code. Please correct the number and try again.";
+        if (!Pattern.matches("^\\+\\d{9,13}$", r)) {
+            return "Cell phone number is incorrectly formatted or does not contain an international code. Please correct the number and try again.";
+        }
+        return null;
+    }
+
+    // Helper for tests: reset counter (use with caution)
+    public static void resetForTesting() {
+        globalCounter = 0;
+    }
+}
