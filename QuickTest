@@ -1,0 +1,367 @@
+import javax.swing.*;
+import java.io.*;
+import java.util.*;
+import java.util.stream.Collectors;
+
+/**
+ * QuickChat main program extended for Part 3 functionality.
+ */
+public class QuickChat {
+    private static boolean loggedIn = false;
+    private static String loggedInUser = null;
+    private static final List<Message> sentMessages = new ArrayList<>();
+    private static final List<Message> disregardedMessages = new ArrayList<>();
+    private static final List<Message> storedMessages = new ArrayList<>();
+    private static final List<String> messageHashes = new ArrayList<>();
+    private static final List<String> messageIDs = new ArrayList<>();
+    private static final String JSON_FILEPATH = "messages.json";
+
+    public static void main(String[] args) {
+        performLogin();
+
+        if (!loggedIn) {
+            JOptionPane.showMessageDialog(null, "You did not log in. Exiting application.");
+            System.exit(0);
+        }
+
+        JOptionPane.showMessageDialog(null, "Welcome to QuickChat.");
+
+        // Try load stored messages from json file into storedMessages array
+        loadStoredMessagesFromJson(JSON_FILEPATH);
+
+        // Ask how many messages the user will enter during this session:
+        int maxMessages = askNumMessages();
+        if (maxMessages <= 0) {
+            JOptionPane.showMessageDialog(null, "No messages to enter. Exiting.");
+            System.exit(0);
+        }
+
+        int messagesEntered = 0;
+        boolean quit = false;
+        while (!quit) {
+            String menu = "Choose an option:\n1) Enter Messages (send/store/discard)\n2) Arrays & Reports Menu\n3) Show recently sent messages (Coming Soon.)\n4) Quit";
+            String choice = JOptionPane.showInputDialog(null, menu, "QuickChat Menu", JOptionPane.QUESTION_MESSAGE);
+            if (choice == null) { quit = true; break; }
+            choice = choice.trim();
+            switch (choice) {
+                case "1":
+                    while (messagesEntered < maxMessages) {
+                        String recipient = JOptionPane.showInputDialog(null, "Enter recipient cell number (international code, e.g. +27834557896):", "Recipient", JOptionPane.QUESTION_MESSAGE);
+                        if (recipient == null) break;
+                        recipient = recipient.trim();
+                        String recErr = Message.validateRecipientFormat(recipient);
+                        if (recErr != null) {
+                            JOptionPane.showMessageDialog(null, recErr);
+                            continue;
+                        } else {
+                            JOptionPane.showMessageDialog(null, "Cell phone number successfully captured.");
+                        }
+
+                        String msgText = JOptionPane.showInputDialog(null, "Enter message (max 250 characters):", "Message", JOptionPane.PLAIN_MESSAGE);
+                        if (msgText == null) break;
+                        String msgErr = Message.validateMessageLength(msgText);
+                        if (msgErr != null) {
+                            JOptionPane.showMessageDialog(null, msgErr);
+                            continue;
+                        } else {
+                            JOptionPane.showMessageDialog(null, "Message ready to send.");
+                        }
+
+                        Message m = new Message(recipient, msgText);
+
+                        String action = m.SentMessage();
+                        switch (action) {
+                            case "SEND":
+                                sentMessages.add(m);
+                                messageHashes.add(m.getMessageHash());
+                                messageIDs.add(m.getMessageID());
+                                JOptionPane.showMessageDialog(null, "Message successfully sent.");
+                                JOptionPane.showMessageDialog(null, m.printMessages(), "Message Sent Details", JOptionPane.INFORMATION_MESSAGE);
+                                break;
+                            case "DISCARD":
+                                disregardedMessages.add(m);
+                                messageHashes.add(m.getMessageHash());
+                                messageIDs.add(m.getMessageID());
+                                JOptionPane.showMessageDialog(null, "Press 0 to delete message.");
+                                break;
+                            case "STORE":
+                                storedMessages.add(m);
+                                messageHashes.add(m.getMessageHash());
+                                messageIDs.add(m.getMessageID());
+                                JOptionPane.showMessageDialog(null, "Message successfully stored.");
+                                break;
+                            case "JSON":
+                                boolean ok = m.storeMessageToJsonFile(JSON_FILEPATH);
+                                if (ok) {
+                                    storedMessages.add(m);
+                                    messageHashes.add(m.getMessageHash());
+                                    messageIDs.add(m.getMessageID());
+                                    JOptionPane.showMessageDialog(null, "Message saved to JSON file and stored.");
+                                } else JOptionPane.showMessageDialog(null, "Failed to save message to JSON file.");
+                                break;
+                            default:
+                                JOptionPane.showMessageDialog(null, "Message disregarded.");
+                                disregardedMessages.add(m);
+                                break;
+                        }
+
+                        messagesEntered++;
+                        if (messagesEntered >= maxMessages) {
+                            JOptionPane.showMessageDialog(null, "You have entered all allowed messages.");
+                            break;
+                        }
+                        int cont = JOptionPane.showConfirmDialog(null, "Do you want to enter another message now?", "Continue?", JOptionPane.YES_NO_OPTION);
+                        if (cont != JOptionPane.YES_OPTION) break;
+                    }
+                    break;
+
+                case "2":
+                    arraysAndReportsMenu();
+                    break;
+
+                case "3":
+                    JOptionPane.showMessageDialog(null, "Coming Soon.");
+                    break;
+
+                case "4":
+                    quit = true;
+                    break;
+
+                default:
+                    JOptionPane.showMessageDialog(null, "Invalid option, please enter 1, 2, 3 or 4.");
+                    break;
+            }
+        }
+
+        String summary = String.format("Session summary for %s:\nTotal messages sent: %d\nTotal messages stored for later: %d\nTotal disregarded: %d\nTotal created: %d",
+                loggedInUser,
+                sentMessages.size(),
+                storedMessages.size(),
+                disregardedMessages.size(),
+                Message.returnTotalMessagess());
+        JOptionPane.showMessageDialog(null, summary, "Summary", JOptionPane.INFORMATION_MESSAGE);
+
+        System.exit(0);
+    }
+
+    private static void performLogin() {
+        while (!loggedIn) {
+            String username = JOptionPane.showInputDialog(null, "Enter username (leave blank to cancel):", "Login", JOptionPane.QUESTION_MESSAGE);
+            if (username == null || username.trim().isEmpty()) { loggedIn = false; return; }
+            String password = JOptionPane.showInputDialog(null, "Enter password:", "Login", JOptionPane.QUESTION_MESSAGE);
+            if (password == null) { loggedIn = false; return; }
+            if (!username.trim().isEmpty() && !password.trim().isEmpty()) {
+                loggedIn = true;
+                loggedInUser = username.trim();
+                JOptionPane.showMessageDialog(null, "Login successful. Welcome, " + loggedInUser + "!");
+                return;
+            } else {
+                JOptionPane.showMessageDialog(null, "Invalid credentials. Try again.");
+            }
+        }
+    }
+
+    private static int askNumMessages() {
+        while (true) {
+            String ans = JOptionPane.showInputDialog(null, "How many messages will you enter in this session? (Enter a positive integer)", "Number of Messages", JOptionPane.QUESTION_MESSAGE);
+            if (ans == null) return 0;
+            ans = ans.trim();
+            try {
+                int n = Integer.parseInt(ans);
+                if (n > 0) return n;
+                else JOptionPane.showMessageDialog(null, "Please enter a positive integer.");
+            } catch (NumberFormatException ex) {
+                JOptionPane.showMessageDialog(null, "Please enter a valid integer.");
+            }
+        }
+    }
+
+    private static void loadStoredMessagesFromJson(String filepath) {
+        File f = new File(filepath);
+        if (!f.exists()) return;
+        try (BufferedReader br = new BufferedReader(new FileReader(f))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                Message m = Message.fromJsonLine(line);
+                if (m != null) {
+                    storedMessages.add(m);
+                    messageHashes.add(m.getMessageHash());
+                    messageIDs.add(m.getMessageID());
+                }
+            }
+        } catch (IOException ex) {
+            ex.printStackTrace();
+        }
+    }
+
+    private static void arraysAndReportsMenu() {
+        String menu = "Arrays & Reports:\n1) Display sender & recipient of all sent messages\n2) Display longest sent message\n3) Search by Message ID\n4) Search messages to a particular recipient\n5) Delete a message using message hash\n6) Display full sent messages report\n7) Populate arrays with sample test data (for unit tests)\n8) Back to main menu";
+        String choice = JOptionPane.showInputDialog(null, menu, "Arrays & Reports", JOptionPane.QUESTION_MESSAGE);
+        if (choice == null) return;
+        switch (choice.trim()) {
+            case "1":
+                displaySenderAndRecipient();
+                break;
+            case "2":
+                displayLongestSentMessage();
+                break;
+            case "3":
+                searchByMessageID();
+                break;
+            case "4":
+                searchByRecipient();
+                break;
+            case "5":
+                deleteByMessageHash();
+                break;
+            case "6":
+                displayFullSentReport();
+                break;
+            case "7":
+                populateWithTestData();
+                JOptionPane.showMessageDialog(null, "Sample test data populated into arrays.");
+                break;
+            case "8":
+                break;
+            default:
+                JOptionPane.showMessageDialog(null, "Invalid choice.");
+        }
+    }
+
+    private static void displaySenderAndRecipient() {
+        if (sentMessages.isEmpty()) {
+            JOptionPane.showMessageDialog(null, "No sent messages to display.");
+            return;
+        }
+        StringBuilder sb = new StringBuilder();
+        for (Message m : sentMessages) {
+            sb.append("Sender: ").append(loggedInUser == null ? "Unknown" : loggedInUser).append(", Recipient: ").append(m.getRecipient()).append("\n");
+        }
+        JOptionPane.showMessageDialog(null, sb.toString(), "Senders & Recipients", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private static void displayLongestSentMessage() {
+        if (sentMessages.isEmpty()) {
+            JOptionPane.showMessageDialog(null, "No sent messages.");
+            return;
+        }
+        // Find the longest message by length
+        Message longest = Collections.max(sentMessages, Comparator.comparingInt(m -> m.getMessageText().length()));
+        JOptionPane.showMessageDialog(null, "Longest sent message:\n" + longest.getMessageText(), "Longest Message", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private static void searchByMessageID() {
+        String id = JOptionPane.showInputDialog(null, "Enter Message ID to search:", "Search Message ID", JOptionPane.QUESTION_MESSAGE);
+        if (id == null) return;
+        // search all arrays for matching messageID
+        List<Message> all = new ArrayList<>();
+        all.addAll(sentMessages);
+        all.addAll(storedMessages);
+        all.addAll(disregardedMessages);
+        for (Message m : all) {
+            if (m.getMessageID().equals(id)) {
+                JOptionPane.showMessageDialog(null, "Found:\nRecipient: " + m.getRecipient() + "\nMessage: " + m.getMessageText());
+                return;
+            }
+        }
+        JOptionPane.showMessageDialog(null, "Message ID not found.");
+    }
+
+    private static void searchByRecipient() {
+        String rec = JOptionPane.showInputDialog(null, "Enter recipient number to search (e.g. +27838884567):", "Search Recipient", JOptionPane.QUESTION_MESSAGE);
+        if (rec == null) return;
+        List<Message> all = new ArrayList<>();
+        all.addAll(sentMessages);
+        all.addAll(storedMessages);
+        all.addAll(disregardedMessages);
+        List<Message> found = all.stream().filter(m -> m.getRecipient().equals(rec)).collect(Collectors.toList());
+        if (found.isEmpty()) {
+            JOptionPane.showMessageDialog(null, "No messages found for recipient " + rec);
+            return;
+        }
+        StringBuilder sb = new StringBuilder();
+        for (Message m : found) sb.append(m.getMessageText()).append("\n");
+        JOptionPane.showMessageDialog(null, "Messages for " + rec + ":\n" + sb.toString(), "Search Results", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private static void deleteByMessageHash() {
+        String hash = JOptionPane.showInputDialog(null, "Enter message hash to delete (case sensitive):", "Delete by Hash", JOptionPane.QUESTION_MESSAGE);
+        if (hash == null) return;
+        // Search in storedMessages and sentMessages and disregardedMessages
+        boolean deleted = deleteFromListByHash(sentMessages, hash) | deleteFromListByHash(storedMessages, hash) | deleteFromListByHash(disregardedMessages, hash);
+        if (deleted) {
+            // keep messageHashes and messageIDs in sync by removing entries where hash equals
+            messageHashes.removeIf(h -> h.equals(hash));
+            JOptionPane.showMessageDialog(null, "Message successfully deleted.");
+        } else {
+            JOptionPane.showMessageDialog(null, "Message hash not found.");
+        }
+    }
+
+    private static boolean deleteFromListByHash(List<Message> list, String hash) {
+        Iterator<Message> it = list.iterator();
+        while (it.hasNext()) {
+            Message m = it.next();
+            if (m.getMessageHash().equals(hash)) {
+                it.remove();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void displayFullSentReport() {
+        if (sentMessages.isEmpty()) {
+            JOptionPane.showMessageDialog(null, "No sent messages.");
+            return;
+        }
+        StringBuilder sb = new StringBuilder();
+        for (Message m : sentMessages) {
+            sb.append("Message Hash: ").append(m.getMessageHash()).append("\n");
+            sb.append("Recipient: ").append(m.getRecipient()).append("\n");
+            sb.append("Message: ").append(m.getMessageText()).append("\n");
+            sb.append("-------------\n");
+        }
+        JOptionPane.showMessageDialog(null, sb.toString(), "Full Sent Messages Report", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private static void populateWithTestData() {
+        // Test Data provided in assignment - make sure to add to correct arrays depending on flag:
+        // Message 1 - Sent
+        Message m1 = new Message("+27834557896", "Did you get the cake?");
+        sentMessages.add(m1);
+        messageHashes.add(m1.getMessageHash());
+        messageIDs.add(m1.getMessageID());
+
+        // Message 2 - Stored
+        Message m2 = new Message("+27838884567", "Where are you? You are late! I have asked you to be on time.");
+        storedMessages.add(m2);
+        messageHashes.add(m2.getMessageHash());
+        messageIDs.add(m2.getMessageID());
+
+        // Message 3 - Disregard
+        Message m3 = new Message("+27834484567", "Yohoooo, I am at your gate.");
+        disregardedMessages.add(m3);
+        messageHashes.add(m3.getMessageHash());
+        messageIDs.add(m3.getMessageID());
+
+        // Message 4 - Sent (developer number included in test data; we treat as recipient here per earlier structure)
+        Message m4 = new Message("+0838884567", "It is dinner time!");
+        sentMessages.add(m4);
+        messageHashes.add(m4.getMessageHash());
+        messageIDs.add(m4.getMessageID());
+
+        // Message 5 - Stored
+        Message m5 = new Message("+27838884567", "Ok, I am leaving without you.");
+        storedMessages.add(m5);
+        messageHashes.add(m5.getMessageHash());
+        messageIDs.add(m5.getMessageID());
+    }
+
+    // These getters are useful for unit tests (if run in same VM)
+    public static List<Message> getSentMessages() { return sentMessages; }
+    public static List<Message> getStoredMessages() { return storedMessages; }
+    public static List<Message> getDisregardedMessages() { return disregardedMessages; }
+    public static List<String> getMessageHashes() { return messageHashes; }
+    public static List<String> getMessageIDs() { return messageIDs; }
+}
